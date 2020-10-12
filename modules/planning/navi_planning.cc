@@ -21,10 +21,9 @@
 #include <map>
 
 #include "cyber/common/file.h"
+#include "cyber/time/clock.h"
 #include "google/protobuf/repeated_field.h"
-
 #include "modules/common/math/quaternion.h"
-#include "modules/common/time/time.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/map/hdmap/hdmap_util.h"
 #include "modules/planning/common/ego_info.h"
@@ -46,7 +45,7 @@ using apollo::common::Status;
 using apollo::common::TrajectoryPoint;
 using apollo::common::VehicleState;
 using apollo::common::VehicleStateProvider;
-using apollo::common::time::Clock;
+using apollo::cyber::Clock;
 using apollo::hdmap::HDMapUtil;
 
 NaviPlanning::~NaviPlanning() {
@@ -102,13 +101,14 @@ Status NaviPlanning::InitFrame(const uint32_t sequence_num,
   std::list<hdmap::RouteSegments> segments;
   if (!reference_line_provider_->GetReferenceLines(&reference_lines,
                                                    &segments)) {
-    std::string msg = "Failed to create reference line";
+    const std::string msg = "Failed to create reference line";
+    AERROR << msg;
     return Status(ErrorCode::PLANNING_ERROR, msg);
   }
 
-  auto status = frame_->Init(reference_lines, segments,
-                             reference_line_provider_->FutureRouteWaypoints(),
-                             injector_->ego_info());
+  auto status = frame_->Init(
+      injector_->vehicle_state(), reference_lines, segments,
+      reference_line_provider_->FutureRouteWaypoints(), injector_->ego_info());
 
   if (!status.ok()) {
     AERROR << "failed to init frame:" << status.ToString();
@@ -126,8 +126,8 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
   hdmap_ = HDMapUtil::BaseMapPtr(*local_view.relative_map);
   // Prefer "std::make_unique" to direct use of "new".
   // Refer to "https://herbsutter.com/gotw/_102/" for details.
-  reference_line_provider_ =
-      std::make_unique<ReferenceLineProvider>(hdmap_, local_view_.relative_map);
+  reference_line_provider_ = std::make_unique<ReferenceLineProvider>(
+      injector_->vehicle_state(), hdmap_, local_view_.relative_map);
 
   // localization
   ADEBUG << "Get localization: "
@@ -136,7 +136,7 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
   // chassis
   ADEBUG << "Get chassis: " << local_view_.chassis->DebugString();
 
-  Status status = VehicleStateProvider::Instance()->Update(
+  Status status = injector_->vehicle_state()->Update(
       *local_view_.localization_estimate, *local_view_.chassis);
 
   auto vehicle_config =
@@ -159,8 +159,7 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
   }
   last_vehicle_config_ = vehicle_config;
 
-  VehicleState vehicle_state =
-      VehicleStateProvider::Instance()->vehicle_state();
+  VehicleState vehicle_state = injector_->vehicle_state()->vehicle_state();
 
   // estimate (x, y) at current timestamp
   // This estimate is only valid if the current time and vehicle state timestamp
@@ -169,7 +168,7 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
   DCHECK_GE(start_timestamp, vehicle_state.timestamp());
   if (start_timestamp - vehicle_state.timestamp() <
       FLAGS_message_latency_threshold) {
-    auto future_xy = VehicleStateProvider::Instance()->EstimateFuturePosition(
+    auto future_xy = injector_->vehicle_state()->EstimateFuturePosition(
         start_timestamp - vehicle_state.timestamp());
     vehicle_state.set_x(future_xy.x());
     vehicle_state.set_y(future_xy.y());
@@ -181,7 +180,7 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
                         ->mutable_not_ready();
 
   if (!status.ok() || !util::IsVehicleStateValid(vehicle_state)) {
-    std::string msg("Update VehicleStateProvider failed");
+    const std::string msg = "Update VehicleStateProvider failed";
     AERROR << msg;
     not_ready->set_reason(msg);
     status.Save(trajectory_pb->mutable_header()->mutable_status());
@@ -204,7 +203,7 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
   status = InitFrame(frame_num, stitching_trajectory.back(), vehicle_state);
 
   if (!frame_) {
-    std::string msg("Failed to init frame");
+    const std::string msg = "Failed to init frame";
     AERROR << msg;
     not_ready->set_reason(msg);
     status.Save(trajectory_pb->mutable_header()->mutable_status());
@@ -275,7 +274,8 @@ void NaviPlanning::RunOnce(const LocalView& local_view,
 
   status = Plan(start_timestamp, stitching_trajectory, trajectory_pb);
 
-  const auto time_diff_ms = (Clock::NowInSeconds() - start_timestamp) * 1000;
+  const auto time_diff_ms =
+      (Clock::NowInSeconds() - start_timestamp) * 1000;
   ADEBUG << "total planning time spend: " << time_diff_ms << " ms.";
 
   trajectory_pb->mutable_latency_stats()->set_total_time_ms(time_diff_ms);
@@ -486,7 +486,7 @@ Status NaviPlanning::Plan(
 
   const auto* best_ref_info = frame_->FindDriveReferenceLineInfo();
   if (!best_ref_info) {
-    std::string msg("planner failed to make a driving plan");
+    const std::string msg = "planner failed to make a driving plan";
     AERROR << msg;
     if (last_publishable_trajectory_) {
       last_publishable_trajectory_->Clear();

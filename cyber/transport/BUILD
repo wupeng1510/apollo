@@ -1,3 +1,4 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools:cpplint.bzl", "cpplint")
 
 package(default_visibility = ["//visibility:public"])
@@ -33,7 +34,7 @@ cc_library(
 
 cc_test(
     name = "transport_test",
-    size = "small",
+    size = "large",
     srcs = ["transport_test.cc"],
     deps = [
         "//cyber:cyber_core",
@@ -308,7 +309,7 @@ cc_library(
     hdrs = ["rtps/underlay_message.h"],
     deps = [
         "//cyber/common:log",
-        "@fastrtps",
+        "@fastcdr",
     ],
 )
 
@@ -340,6 +341,7 @@ cc_library(
     hdrs = ["rtps/underlay_message_type.h"],
     deps = [
         ":underlay_message",
+        "@fastcdr",
         "@fastrtps",
     ],
 )
@@ -351,6 +353,7 @@ cc_test(
     deps = [
         "//cyber:cyber_core",
         "@com_google_googletest//:gtest_main",
+        "@fastcdr",
     ],
 )
 
@@ -569,7 +572,7 @@ cc_test(
 
 cc_test(
     name = "condition_notifier_test",
-    size = "small",
+    size = "large",
     srcs = ["shm/condition_notifier_test.cc"],
     deps = [
         "//cyber:cyber_core",

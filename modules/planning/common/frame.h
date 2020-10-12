@@ -41,7 +41,6 @@
 #include "modules/planning/common/open_space_info.h"
 #include "modules/planning/common/reference_line_info.h"
 #include "modules/planning/common/trajectory/publishable_trajectory.h"
-#include "modules/planning/proto/learning_data.pb.h"
 #include "modules/planning/proto/pad_msg.pb.h"
 #include "modules/planning/proto/planning.pb.h"
 #include "modules/planning/proto/planning_config.pb.h"
@@ -77,12 +76,15 @@ class Frame {
   const common::TrajectoryPoint &PlanningStartPoint() const;
 
   common::Status Init(
+      const common::VehicleStateProvider *vehicle_state_provider,
       const std::list<ReferenceLine> &reference_lines,
       const std::list<hdmap::RouteSegments> &segments,
       const std::vector<routing::LaneWaypoint> &future_route_waypoints,
       const EgoInfo *ego_info);
 
-  common::Status InitForOpenSpace(const EgoInfo *ego_info);
+  common::Status InitForOpenSpace(
+      const common::VehicleStateProvider *vehicle_state_provider,
+      const EgoInfo *ego_info);
 
   uint32_t SequenceNum() const;
 
@@ -147,13 +149,8 @@ class Frame {
     return current_frame_planned_path_;
   }
 
-  const bool is_near_destination() const { return is_near_destination_; }
-
-  const bool is_valid_learning_trajectory() const {
-    return is_valid_learning_trajectory_;
-  }
-  void set_learning_trajectory_valid(bool is_valid) {
-    is_valid_learning_trajectory_ = is_valid;
+  const bool is_near_destination() const {
+    return is_near_destination_;
   }
 
   /**
@@ -163,13 +160,21 @@ class Frame {
   void UpdateReferenceLinePriority(
       const std::map<std::string, uint32_t> &id_to_priority);
 
-  const LocalView &local_view() const { return local_view_; }
+  const LocalView &local_view() const {
+    return local_view_;
+  }
 
-  ThreadSafeIndexedObstacles *GetObstacleList() { return &obstacles_; }
+  ThreadSafeIndexedObstacles *GetObstacleList() {
+    return &obstacles_;
+  }
 
-  const OpenSpaceInfo &open_space_info() const { return open_space_info_; }
+  const OpenSpaceInfo &open_space_info() const {
+    return open_space_info_;
+  }
 
-  OpenSpaceInfo *mutable_open_space_info() { return &open_space_info_; }
+  OpenSpaceInfo *mutable_open_space_info() {
+    return &open_space_info_;
+  }
 
   perception::TrafficLight GetSignal(const std::string &traffic_light_id) const;
 
@@ -177,22 +182,10 @@ class Frame {
     return pad_msg_driving_action_;
   }
 
-  const LearningDataFrame &learning_data_frame() const {
-    return learning_data_frame_;
-  }
-
-  void set_learning_data_adc_future_trajectory_points(
-      const std::vector<common::TrajectoryPoint> &trajectory_points) {
-    learning_data_adc_future_trajectory_points_ = trajectory_points;
-  }
-
-  const std::vector<common::TrajectoryPoint>
-      &learning_data_adc_future_trajectory_points() const {
-    return learning_data_adc_future_trajectory_points_;
-  }
-
  private:
-  common::Status InitFrameData(const EgoInfo *ego_info);
+  common::Status InitFrameData(
+      const common::VehicleStateProvider *vehicle_state_provider,
+      const EgoInfo *ego_info);
 
   bool CreateReferenceLineInfo(const std::list<ReferenceLine> &reference_lines,
                                const std::list<hdmap::RouteSegments> &segments);
@@ -218,8 +211,6 @@ class Frame {
   void ReadPadMsgDrivingAction();
   void ResetPadMsgDrivingAction();
 
-  void ReadLearningDataFrame();
-
  private:
   static DrivingAction pad_msg_driving_action_;
   uint32_t sequence_num_ = 0;
@@ -237,6 +228,7 @@ class Frame {
   const ReferenceLineInfo *drive_reference_line_info_ = nullptr;
 
   ThreadSafeIndexedObstacles obstacles_;
+
   std::unordered_map<std::string, const perception::TrafficLight *>
       traffic_lights_;
 
@@ -253,11 +245,6 @@ class Frame {
   std::vector<routing::LaneWaypoint> future_route_waypoints_;
 
   common::monitor::MonitorLogBuffer monitor_logger_buffer_;
-
-  LearningDataFrame learning_data_frame_;
-  std::vector<common::TrajectoryPoint>
-      learning_data_adc_future_trajectory_points_;
-  bool is_valid_learning_trajectory_ = false;
 };
 
 class FrameHistory : public IndexedQueue<uint32_t, Frame> {

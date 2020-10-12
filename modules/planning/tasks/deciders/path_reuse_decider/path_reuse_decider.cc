@@ -23,8 +23,9 @@
 #include <memory>
 #include <string>
 
-#include "modules/planning/common/planning_context.h"
 #include "modules/planning/proto/planning.pb.h"
+
+#include "modules/planning/common/planning_context.h"
 
 namespace apollo {
 namespace planning {
@@ -75,6 +76,15 @@ Status PathReuseDecider::Process(Frame* const frame,
   if (lane_change_status->status() != ChangeLaneStatus::IN_CHANGE_LANE &&
       !FLAGS_enable_reuse_path_in_lane_follow) {
     ADEBUG << "skipping reusing path: not in lane_change";
+    reference_line_info->set_path_reusable(false);
+    return Status::OK();
+  }
+
+  // for hybrid model: skip reuse path for valid path reference
+  const bool valid_model_output =
+      reference_line_info->path_data().is_valid_path_reference();
+  if (valid_model_output) {
+    ADEBUG << "skipping reusing path: path reference is valid";
     reference_line_info->set_path_reusable(false);
     return Status::OK();
   }
@@ -164,8 +174,7 @@ bool PathReuseDecider::IsIgnoredBlockingObstacle(
   static constexpr double kSDistBuffer = 30.0;  // meter
   static constexpr int kTimeBuffer = 3;         // second
   // vehicle speed
-  double adc_speed =
-      common::VehicleStateProvider::Instance()->linear_velocity();
+  double adc_speed = injector_->vehicle_state()->linear_velocity();
   double final_s_buffer = std::max(kSDistBuffer, kTimeBuffer * adc_speed);
   // current vehicle s position
   common::SLPoint adc_position_sl;
@@ -207,9 +216,8 @@ bool PathReuseDecider::GetBlockingObstacleS(
 
 void PathReuseDecider::GetADCSLPoint(const ReferenceLine& reference_line,
                                      common::SLPoint* adc_position_sl) {
-  common::math::Vec2d adc_position = {
-      common::VehicleStateProvider::Instance()->x(),
-      common::VehicleStateProvider::Instance()->y()};
+  common::math::Vec2d adc_position = {injector_->vehicle_state()->x(),
+                                      injector_->vehicle_state()->y()};
   reference_line.XYToSL(adc_position, adc_position_sl);
 }
 

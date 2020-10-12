@@ -234,7 +234,7 @@ message Ecu_status_2_516 {
   optional double battery_voltage = 2;
   // Current battery current (BMS status) [A] [-60|60]
   optional double battery_current = 3;
-  // Current battery temperature (BMS status) [¡É] [-40|110]
+  // Current battery temperature (BMS status) [?] [-40|110]
   optional int32 battery_temperature = 4;
 }
 

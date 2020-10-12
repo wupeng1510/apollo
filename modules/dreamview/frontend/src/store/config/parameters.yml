@@ -192,6 +192,18 @@ options:
   showObstaclesInfo:
     default: true
     menuId: perceptionObstacleInfo
+  showObstaclesLidarSensor:
+    default: false
+    menuId: perceptionLidarSensor
+  showObstaclesRadarSensor:
+    default: false
+    menuId: perceptionRadarSensor
+  showObstaclesCameraSensor:
+    default: false
+    menuId: perceptionCameraSensor
+  showObstaclesV2xInfo:
+    default: false
+    menuId: perceptionV2xInfo
   showPositionGps:
     default: false
     menuId: positionGps

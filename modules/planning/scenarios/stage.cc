@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "modules/common/time/time.h"
+#include "cyber/time/clock.h"
 #include "modules/planning/common/planning_context.h"
 #include "modules/planning/common/speed_profile_generator.h"
 #include "modules/planning/common/trajectory/publishable_trajectory.h"
@@ -33,7 +33,7 @@ namespace apollo {
 namespace planning {
 namespace scenario {
 
-using apollo::common::time::Clock;
+using apollo::cyber::Clock;
 
 namespace {
 // constexpr double kPathOptimizationFallbackCost = 2e4;
@@ -93,7 +93,17 @@ bool Stage::ExecuteTaskOnReferenceLine(
     }
 
     for (auto* task : task_list_) {
+      const double start_timestamp = Clock::NowInSeconds();
+
       const auto ret = task->Execute(frame, &reference_line_info);
+
+      const double end_timestamp = Clock::NowInSeconds();
+      const double time_diff_ms = (end_timestamp - start_timestamp) * 1000;
+      ADEBUG << "after task[" << task->Name()
+             << "]: " << reference_line_info.PathSpeedDebugString();
+      ADEBUG << task->Name() << " time spend: " << time_diff_ms << " ms.";
+      RecordDebugInfo(&reference_line_info, task->Name(), time_diff_ms);
+
       if (!ret.ok()) {
         AERROR << "Failed to run tasks[" << task->Name()
                << "], Error message: " << ret.error_message();
@@ -135,7 +145,16 @@ bool Stage::ExecuteTaskOnReferenceLineForOnlineLearning(
   auto& picked_reference_line_info =
       frame->mutable_reference_line_info()->front();
   for (auto* task : task_list_) {
+    const double start_timestamp = Clock::NowInSeconds();
+
     const auto ret = task->Execute(frame, &picked_reference_line_info);
+
+    const double end_timestamp = Clock::NowInSeconds();
+    const double time_diff_ms = (end_timestamp - start_timestamp) * 1000;
+    ADEBUG << "task[" << task->Name() << "] time spent: " << time_diff_ms
+           << " ms.";
+    RecordDebugInfo(&picked_reference_line_info, task->Name(), time_diff_ms);
+
     if (!ret.ok()) {
       AERROR << "Failed to run tasks[" << task->Name()
              << "], Error message: " << ret.error_message();
@@ -147,7 +166,7 @@ bool Stage::ExecuteTaskOnReferenceLineForOnlineLearning(
       picked_reference_line_info.trajectory();
   DiscretizedTrajectory trajectory;
   if (picked_reference_line_info.AdjustTrajectoryWhichStartsFromCurrentPos(
-      planning_start_point, adc_future_trajectory_points, &trajectory)) {
+          planning_start_point, adc_future_trajectory_points, &trajectory)) {
     picked_reference_line_info.SetTrajectory(trajectory);
     picked_reference_line_info.SetDrivable(true);
     picked_reference_line_info.SetCost(0);
@@ -170,8 +189,8 @@ bool Stage::ExecuteTaskOnOpenSpace(Frame* frame) {
   if (frame->open_space_info().fallback_flag()) {
     auto& trajectory = frame->open_space_info().fallback_trajectory().first;
     auto& gear = frame->open_space_info().fallback_trajectory().second;
-    PublishableTrajectory publishable_trajectory(Clock::NowInSeconds(),
-                                                 trajectory);
+    PublishableTrajectory publishable_trajectory(
+        Clock::NowInSeconds(), trajectory);
     auto publishable_traj_and_gear =
         std::make_pair(std::move(publishable_trajectory), gear);
 
@@ -182,8 +201,8 @@ bool Stage::ExecuteTaskOnOpenSpace(Frame* frame) {
         frame->open_space_info().chosen_partitioned_trajectory().first;
     auto& gear =
         frame->open_space_info().chosen_partitioned_trajectory().second;
-    PublishableTrajectory publishable_trajectory(Clock::NowInSeconds(),
-                                                 trajectory);
+    PublishableTrajectory publishable_trajectory(
+        Clock::NowInSeconds(), trajectory);
     auto publishable_traj_and_gear =
         std::make_pair(std::move(publishable_trajectory), gear);
 
@@ -196,6 +215,25 @@ bool Stage::ExecuteTaskOnOpenSpace(Frame* frame) {
 Stage::StageStatus Stage::FinishScenario() {
   next_stage_ = ScenarioConfig::NO_STAGE;
   return Stage::FINISHED;
+}
+
+void Stage::RecordDebugInfo(ReferenceLineInfo* reference_line_info,
+                            const std::string& name,
+                            const double time_diff_ms) {
+  if (!FLAGS_enable_record_debug) {
+    ADEBUG << "Skip record debug info";
+    return;
+  }
+  if (reference_line_info == nullptr) {
+    AERROR << "Reference line info is null.";
+    return;
+  }
+
+  auto ptr_latency_stats = reference_line_info->mutable_latency_stats();
+
+  auto ptr_stats = ptr_latency_stats->add_task_stats();
+  ptr_stats->set_name(name);
+  ptr_stats->set_time_ms(time_diff_ms);
 }
 
 }  // namespace scenario

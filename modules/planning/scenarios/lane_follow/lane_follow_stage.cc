@@ -23,8 +23,8 @@
 #include <utility>
 
 #include "cyber/common/log.h"
+#include "cyber/time/clock.h"
 #include "modules/common/math/math_utils.h"
-#include "modules/common/time/time.h"
 #include "modules/common/util/point_factory.h"
 #include "modules/common/util/string_util.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
@@ -48,8 +48,8 @@ using apollo::common::ErrorCode;
 using apollo::common::SLPoint;
 using apollo::common::Status;
 using apollo::common::TrajectoryPoint;
-using apollo::common::time::Clock;
 using apollo::common::util::PointFactory;
+using apollo::cyber::Clock;
 
 namespace {
 constexpr double kPathOptimizationFallbackCost = 2e4;
@@ -88,25 +88,6 @@ void LaneFollowStage::RecordObstacleDebugInfo(
       decision_tag->mutable_decision()->CopyFrom(decisions[i]);
     }
   }
-}
-
-void LaneFollowStage::RecordDebugInfo(ReferenceLineInfo* reference_line_info,
-                                      const std::string& name,
-                                      const double time_diff_ms) {
-  if (!FLAGS_enable_record_debug) {
-    ADEBUG << "Skip record debug info";
-    return;
-  }
-  if (reference_line_info == nullptr) {
-    AERROR << "Reference line info is null.";
-    return;
-  }
-
-  auto ptr_latency_stats = reference_line_info->mutable_latency_stats();
-
-  auto ptr_stats = ptr_latency_stats->add_task_stats();
-  ptr_stats->set_name(name);
-  ptr_stats->set_time_ms(time_diff_ms);
 }
 
 Stage::StageStatus LaneFollowStage::Process(
@@ -180,22 +161,23 @@ Status LaneFollowStage::PlanOnReferenceLine(
          << reference_line_info->IsChangeLanePath();
 
   auto ret = Status::OK();
-  for (auto* optimizer : task_list_) {
+  for (auto* task : task_list_) {
     const double start_timestamp = Clock::NowInSeconds();
-    ret = optimizer->Execute(frame, reference_line_info);
+
+    ret = task->Execute(frame, reference_line_info);
+
+    const double end_timestamp = Clock::NowInSeconds();
+    const double time_diff_ms = (end_timestamp - start_timestamp) * 1000;
+    ADEBUG << "after task[" << task->Name()
+           << "]:" << reference_line_info->PathSpeedDebugString();
+    ADEBUG << task->Name() << " time spend: " << time_diff_ms << " ms.";
+    RecordDebugInfo(reference_line_info, task->Name(), time_diff_ms);
+
     if (!ret.ok()) {
-      AERROR << "Failed to run tasks[" << optimizer->Name()
+      AERROR << "Failed to run tasks[" << task->Name()
              << "], Error message: " << ret.error_message();
       break;
     }
-    const double end_timestamp = Clock::NowInSeconds();
-    const double time_diff_ms = (end_timestamp - start_timestamp) * 1000;
-
-    ADEBUG << "after optimizer " << optimizer->Name() << ":"
-           << reference_line_info->PathSpeedDebugString();
-    ADEBUG << optimizer->Name() << " time spend: " << time_diff_ms << " ms.";
-
-    RecordDebugInfo(reference_line_info, optimizer->Name(), time_diff_ms);
 
     // TODO(SHU): disable reference line order changes for now
     // updated reference_line_info, because it is changed in
@@ -217,7 +199,7 @@ Status LaneFollowStage::PlanOnReferenceLine(
   if (!reference_line_info->CombinePathAndSpeedProfile(
           planning_start_point.relative_time(),
           planning_start_point.path_point().s(), &trajectory)) {
-    std::string msg("Fail to aggregate planning trajectory.");
+    const std::string msg = "Fail to aggregate planning trajectory.";
     AERROR << msg;
     return Status(ErrorCode::PLANNING_ERROR, msg);
   }
@@ -264,7 +246,7 @@ Status LaneFollowStage::PlanOnReferenceLine(
   if (FLAGS_enable_trajectory_check) {
     if (ConstraintChecker::ValidTrajectory(trajectory) !=
         ConstraintChecker::Result::VALID) {
-      std::string msg("Current planning trajectory is not valid.");
+      const std::string msg = "Current planning trajectory is not valid.";
       AERROR << msg;
       return Status(ErrorCode::PLANNING_ERROR, msg);
     }

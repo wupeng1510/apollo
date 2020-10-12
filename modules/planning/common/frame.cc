@@ -22,12 +22,11 @@
 #include <algorithm>
 #include <limits>
 
-#include "modules/routing/proto/routing.pb.h"
-
+#include "absl/strings/str_cat.h"
 #include "cyber/common/log.h"
+#include "cyber/time/clock.h"
 #include "modules/common/configs/vehicle_config_helper.h"
 #include "modules/common/math/vec2d.h"
-#include "modules/common/time/time.h"
 #include "modules/common/util/point_factory.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/map/hdmap/hdmap_util.h"
@@ -38,6 +37,7 @@
 #include "modules/planning/common/planning_gflags.h"
 #include "modules/planning/common/util/util.h"
 #include "modules/planning/reference_line/reference_line_provider.h"
+#include "modules/routing/proto/routing.pb.h"
 
 namespace apollo {
 namespace planning {
@@ -46,7 +46,7 @@ using apollo::common::ErrorCode;
 using apollo::common::Status;
 using apollo::common::math::Box2d;
 using apollo::common::math::Polygon2d;
-using apollo::common::time::Clock;
+using apollo::cyber::Clock;
 using apollo::prediction::PredictionObstacles;
 
 DrivingAction Frame::pad_msg_driving_action_ = DrivingAction::NONE;
@@ -319,12 +319,13 @@ const Obstacle *Frame::CreateStaticVirtualObstacle(const std::string &id,
 }
 
 Status Frame::Init(
+    const common::VehicleStateProvider *vehicle_state_provider,
     const std::list<ReferenceLine> &reference_lines,
     const std::list<hdmap::RouteSegments> &segments,
     const std::vector<routing::LaneWaypoint> &future_route_waypoints,
     const EgoInfo *ego_info) {
   // TODO(QiL): refactor this to avoid redundant nullptr checks in scenarios.
-  auto status = InitFrameData(ego_info);
+  auto status = InitFrameData(vehicle_state_provider, ego_info);
   if (!status.ok()) {
     AERROR << "failed to init frame:" << status.ToString();
     return status;
@@ -338,14 +339,18 @@ Status Frame::Init(
   return Status::OK();
 }
 
-Status Frame::InitForOpenSpace(const EgoInfo *ego_info) {
-  return InitFrameData(ego_info);
+Status Frame::InitForOpenSpace(
+    const common::VehicleStateProvider *vehicle_state_provider,
+    const EgoInfo *ego_info) {
+  return InitFrameData(vehicle_state_provider, ego_info);
 }
 
-Status Frame::InitFrameData(const EgoInfo *ego_info) {
+Status Frame::InitFrameData(
+    const common::VehicleStateProvider *vehicle_state_provider,
+    const EgoInfo *ego_info) {
   hdmap_ = hdmap::HDMapUtil::BaseMapPtr();
   CHECK_NOTNULL(hdmap_);
-  vehicle_state_ = common::VehicleStateProvider::Instance()->vehicle_state();
+  vehicle_state_ = vehicle_state_provider->vehicle_state();
   if (!util::IsVehicleStateValid(vehicle_state_)) {
     AERROR << "Adc init point is not set";
     return Status(ErrorCode::PLANNING_ERROR, "Adc init point is not set");
@@ -365,19 +370,17 @@ Status Frame::InitFrameData(const EgoInfo *ego_info) {
   if (planning_start_point_.v() < 1e-3) {
     const auto *collision_obstacle = FindCollisionObstacle(ego_info);
     if (collision_obstacle != nullptr) {
-      std::string err_str =
-          "Found collision with obstacle: " + collision_obstacle->Id();
-      AERROR << err_str;
-      monitor_logger_buffer_.ERROR(err_str);
-      return Status(ErrorCode::PLANNING_ERROR, err_str);
+      const std::string msg = absl::StrCat(
+          "Found collision with obstacle: ", collision_obstacle->Id());
+      AERROR << msg;
+      monitor_logger_buffer_.ERROR(msg);
+      return Status(ErrorCode::PLANNING_ERROR, msg);
     }
   }
 
   ReadTrafficLights();
 
   ReadPadMsgDrivingAction();
-
-  ReadLearningDataFrame();
 
   return Status::OK();
 }
@@ -404,7 +407,7 @@ const Obstacle *Frame::FindCollisionObstacle(const EgoInfo *ego_info) const {
 uint32_t Frame::SequenceNum() const { return sequence_num_; }
 
 std::string Frame::DebugString() const {
-  return "Frame: " + std::to_string(sequence_num_);
+  return absl::StrCat("Frame: ", sequence_num_);
 }
 
 void Frame::RecordInputDebug(planning_internal::Debug *debug) {
@@ -476,8 +479,8 @@ void Frame::ReadTrafficLights() {
   if (traffic_light_detection == nullptr) {
     return;
   }
-  const double delay =
-      traffic_light_detection->header().timestamp_sec() - Clock::NowInSeconds();
+  const double delay = traffic_light_detection->header().timestamp_sec() -
+                       Clock::NowInSeconds();
   if (delay > FLAGS_signal_expire_time_sec) {
     ADEBUG << "traffic signals msg is expired, delay = " << delay
            << " seconds.";
@@ -485,17 +488,6 @@ void Frame::ReadTrafficLights() {
   }
   for (const auto &traffic_light : traffic_light_detection->traffic_light()) {
     traffic_lights_[traffic_light.id()] = &traffic_light;
-  }
-}
-
-void Frame::ReadLearningDataFrame() {
-  learning_data_frame_.Clear();
-  if (FLAGS_planning_offline_mode != 1) {
-    return;
-  }
-  auto learning_data_frame = FeatureOutput::GetLatestLearningDataFrame();
-  if (learning_data_frame != nullptr) {
-    learning_data_frame_.CopyFrom(*learning_data_frame);
   }
 }
 

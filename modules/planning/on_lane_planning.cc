@@ -24,9 +24,9 @@
 #include "absl/strings/str_cat.h"
 #include "cyber/common/file.h"
 #include "cyber/common/log.h"
+#include "cyber/time/clock.h"
 #include "gtest/gtest_prod.h"
 #include "modules/common/math/quaternion.h"
-#include "modules/common/time/time.h"
 #include "modules/common/vehicle_state/vehicle_state_provider.h"
 #include "modules/map/hdmap/hdmap_util.h"
 #include "modules/planning/common/ego_info.h"
@@ -54,7 +54,7 @@ using apollo::common::TrajectoryPoint;
 using apollo::common::VehicleState;
 using apollo::common::VehicleStateProvider;
 using apollo::common::math::Vec2d;
-using apollo::common::time::Clock;
+using apollo::cyber::Clock;
 using apollo::dreamview::Chart;
 using apollo::hdmap::HDMapUtil;
 using apollo::planning_internal::SLFrameDebug;
@@ -102,7 +102,8 @@ Status OnLanePlanning::Init(const PlanningConfig& config) {
   ACHECK(hdmap_) << "Failed to load map";
 
   // instantiate reference line provider
-  reference_line_provider_ = std::make_unique<ReferenceLineProvider>(hdmap_);
+  reference_line_provider_ = std::make_unique<ReferenceLineProvider>(
+      injector_->vehicle_state(), hdmap_);
   reference_line_provider_->Start();
 
   // dispatch planner
@@ -113,7 +114,7 @@ Status OnLanePlanning::Init(const PlanningConfig& config) {
         "planning is not initialized with config : " + config_.DebugString());
   }
 
-  if (FLAGS_planning_offline_mode == 1) {
+  if (config_.learning_mode() != PlanningConfig::NO_LEARNING) {
     PlanningSemanticMapConfig renderer_config;
     ACHECK(apollo::cyber::common::GetProtoFromFile(
         FLAGS_planning_birdview_img_feature_renderer_config_file,
@@ -142,7 +143,8 @@ Status OnLanePlanning::InitFrame(const uint32_t sequence_num,
   std::list<hdmap::RouteSegments> segments;
   if (!reference_line_provider_->GetReferenceLines(&reference_lines,
                                                    &segments)) {
-    std::string msg = "Failed to create reference line";
+    const std::string msg = "Failed to create reference line";
+    AERROR << msg;
     return Status(ErrorCode::PLANNING_ERROR, msg);
   }
   DCHECK_EQ(reference_lines.size(), segments.size());
@@ -153,21 +155,23 @@ Status OnLanePlanning::InitFrame(const uint32_t sequence_num,
   for (auto& ref_line : reference_lines) {
     if (!ref_line.Segment(Vec2d(vehicle_state.x(), vehicle_state.y()),
                           FLAGS_look_backward_distance, forward_limit)) {
-      std::string msg = "Fail to shrink reference line.";
+      const std::string msg = "Fail to shrink reference line.";
+      AERROR << msg;
       return Status(ErrorCode::PLANNING_ERROR, msg);
     }
   }
   for (auto& seg : segments) {
     if (!seg.Shrink(Vec2d(vehicle_state.x(), vehicle_state.y()),
                     FLAGS_look_backward_distance, forward_limit)) {
-      std::string msg = "Fail to shrink routing segments.";
+      const std::string msg = "Fail to shrink routing segments.";
+      AERROR << msg;
       return Status(ErrorCode::PLANNING_ERROR, msg);
     }
   }
 
-  auto status = frame_->Init(reference_lines, segments,
-                             reference_line_provider_->FutureRouteWaypoints(),
-                             injector_->ego_info());
+  auto status = frame_->Init(
+      injector_->vehicle_state(), reference_lines, segments,
+      reference_line_provider_->FutureRouteWaypoints(), injector_->ego_info());
   if (!status.ok()) {
     AERROR << "failed to init frame:" << status.ToString();
     return status;
@@ -179,7 +183,7 @@ Status OnLanePlanning::InitFrame(const uint32_t sequence_num,
 void OnLanePlanning::GenerateStopTrajectory(ADCTrajectory* ptr_trajectory_pb) {
   ptr_trajectory_pb->clear_trajectory_point();
 
-  const auto& vehicle_state = VehicleStateProvider::Instance()->vehicle_state();
+  const auto& vehicle_state = injector_->vehicle_state()->vehicle_state();
   const double max_t = FLAGS_fallback_total_time;
   const double unit_t = FLAGS_fallback_time_unit;
 
@@ -217,20 +221,19 @@ void OnLanePlanning::RunOnce(const LocalView& local_view,
   // chassis
   ADEBUG << "Get chassis:" << local_view_.chassis->DebugString();
 
-  Status status = VehicleStateProvider::Instance()->Update(
+  Status status = injector_->vehicle_state()->Update(
       *local_view_.localization_estimate, *local_view_.chassis);
 
-  VehicleState vehicle_state =
-      VehicleStateProvider::Instance()->vehicle_state();
+  VehicleState vehicle_state = injector_->vehicle_state()->vehicle_state();
   const double vehicle_state_timestamp = vehicle_state.timestamp();
   DCHECK_GE(start_timestamp, vehicle_state_timestamp)
       << "start_timestamp is behind vehicle_state_timestamp by "
       << start_timestamp - vehicle_state_timestamp << " secs";
 
   if (!status.ok() || !util::IsVehicleStateValid(vehicle_state)) {
-    std::string msg(
+    const std::string msg =
         "Update VehicleStateProvider failed "
-        "or the vehicle state is out dated.");
+        "or the vehicle state is out dated.";
     AERROR << msg;
     ptr_trajectory_pb->mutable_decision()
         ->mutable_main_decision()
@@ -263,7 +266,7 @@ void OnLanePlanning::RunOnce(const LocalView& local_view,
 
   // early return when reference line fails to update after rerouting
   if (failed_to_update_reference_line) {
-    std::string msg("Failed to updated reference line after rerouting.");
+    const std::string msg = "Failed to update reference line after rerouting.";
     AERROR << msg;
     ptr_trajectory_pb->mutable_decision()
         ->mutable_main_decision()
@@ -512,7 +515,7 @@ Status OnLanePlanning::Plan(
     auto* engage_advice = ptr_trajectory_pb->mutable_engage_advice();
 
     // enable start auto from open_space planner.
-    if (VehicleStateProvider::Instance()->vehicle_state().driving_mode() !=
+    if (injector_->vehicle_state()->vehicle_state().driving_mode() !=
         Chassis::DrivingMode::Chassis_DrivingMode_COMPLETE_AUTO_DRIVE) {
       engage_advice->set_advice(EngageAdvice::READY_TO_ENGAGE);
       engage_advice->set_reason(
@@ -540,7 +543,7 @@ Status OnLanePlanning::Plan(
     const auto* best_ref_info = frame_->FindDriveReferenceLineInfo();
     const auto* target_ref_info = frame_->FindTargetReferenceLineInfo();
     if (!best_ref_info) {
-      std::string msg("planner failed to make a driving plan");
+      const std::string msg = "planner failed to make a driving plan";
       AERROR << msg;
       if (last_publishable_trajectory_) {
         last_publishable_trajectory_->Clear();
@@ -1118,7 +1121,7 @@ VehicleState OnLanePlanning::AlignTimeStamp(const VehicleState& vehicle_state,
                                             const double curr_timestamp) const {
   // TODO(Jinyun): use the same method in trajectory stitching
   //               for forward prediction
-  auto future_xy = VehicleStateProvider::Instance()->EstimateFuturePosition(
+  auto future_xy = injector_->vehicle_state()->EstimateFuturePosition(
       curr_timestamp - vehicle_state.timestamp());
 
   VehicleState aligned_vehicle_state = vehicle_state;

@@ -7,8 +7,12 @@ data_files {
   dest_path: "/apollo/modules/control/conf/control_conf.pb.txt"
 }
 data_files {
-  source_path: "cancard_params/canbus_conf.pb.txt"
-  dest_path: "/apollo/modules/canbus/conf/canbus_conf.pb.txt"
+  source_path: "cancard_params"
+  dest_path: "/apollo/modules/canbus/conf"
+}
+data_files {
+  source_path: "dreamview_conf/data_collection_table.pb.txt"
+  dest_path: "/apollo/modules/dreamview/conf/data_collection_table.pb.txt"
 }
 data_files {
   source_path: "navigation_lincoln.pb.txt"
@@ -37,6 +41,10 @@ data_files {
 data_files {
   source_path: "radar_params"
   dest_path: "/apollo/modules/perception/data/params"
+}
+data_files {
+  source_path: "microphone_params"
+  dest_path: "/apollo/modules/audio/conf/respeaker_extrinsics.yaml"
 }
 data_files {
   source_path: "gnss_params/ant_imu_leverarm.yaml"
@@ -109,4 +117,48 @@ data_files {
 data_files {
   source_path: "transform_conf/static_transform_conf.pb.txt"
   dest_path: "/apollo/modules/transform/conf/static_transform_conf.pb.txt"
+}
+data_files {
+  source_path: "planning_conf"
+  dest_path: "/apollo/modules/planning/conf"
+}
+data_files {
+  source_path: "localization_conf"
+  dest_path: "/apollo/modules/localization/conf"
+}
+data_files {
+  source_path: "localization_dag"
+  dest_path: "/apollo/modules/localization/dag"
+}
+data_files {
+  source_path: "perception_dag"
+  dest_path: "/apollo/modules/perception/production/dag"
+}
+data_files {
+  source_path: "perception_launch"
+  dest_path: "/apollo/modules/perception/production/launch"
+}
+data_files {
+  source_path: "perception_conf"
+  dest_path: "/apollo/modules/perception/production/conf/perception"
+}
+data_files {
+  source_path: "lidar_dag"
+  dest_path: "/apollo/modules/drivers/lidar/dag"
+}
+data_files {
+  source_path: "lidar_conf"
+  dest_path: "/apollo/modules/drivers/lidar/conf"
+}
+data_files {
+  source_path: "lidar_params"
+  dest_path: "/apollo/modules/drivers/velodyne/params"
+}
+data_files {
+  source_path: "lidar_params"
+  dest_path: "/apollo/modules/localization/msf/params/velodyne_params"
+}
+data_files {
+  source_path: "lidar_params"
+  dest_path: "/apollo/modules/perception/data/params"
 }

@@ -14,16 +14,19 @@
  * limitations under the License.
  *****************************************************************************/
 
-#include "cyber/common/file.h"
-#include "gflags/gflags.h"
 #include "gtest/gtest.h"
-#include "modules/common/configs/config_gflags.h"
-#include "modules/planning/common/planning_gflags.h"
-#include "modules/planning/learning_based/img_feature_renderer/birdview_img_feature_renderer.h"
-#include "modules/planning/learning_based/model_inference/trajectory_imitation_inference.h"
+
+#include "gflags/gflags.h"
+
 #include "modules/planning/proto/learning_data.pb.h"
 #include "modules/planning/proto/planning_semantic_map_config.pb.h"
 #include "modules/planning/proto/task_config.pb.h"
+
+#include "cyber/common/file.h"
+#include "modules/common/configs/config_gflags.h"
+#include "modules/planning/common/planning_gflags.h"
+#include "modules/planning/learning_based/img_feature_renderer/birdview_img_feature_renderer.h"
+#include "modules/planning/learning_based/model_inference/trajectory_imitation_libtorch_inference.h"
 
 namespace apollo {
 namespace planning {
@@ -47,10 +50,10 @@ class ModelInferenceTest : public ::testing::Test {
   }
 };
 
-TEST_F(ModelInferenceTest, trajectory_imitation) {
+TEST_F(ModelInferenceTest, trajectory_imitation_libtorch_inference) {
   FLAGS_test_model_inference_task_config_file =
       "/apollo/modules/planning/testdata/model_inference_test/"
-      "test_learning_model_inference_task_config.pb.txt";
+      "test_libtorch_inference_task_config.pb.txt";
   FLAGS_test_data_frame_file =
       "/apollo/modules/planning/testdata/model_inference_test/"
       "learning_data_sunnyvale_with_two_offices.bin";
@@ -77,10 +80,12 @@ TEST_F(ModelInferenceTest, trajectory_imitation) {
 
   BirdviewImgFeatureRenderer::Instance()->Init(renderer_config);
 
-  std::unique_ptr<ModelInference> trajectory_imitation_inference =
-      std::unique_ptr<ModelInference>(new TrajectoryImitationInference(config));
-
-  ACHECK(trajectory_imitation_inference->Inference(&test_data_frame))
+  std::unique_ptr<ModelInference> trajectory_imitation_libtorch_inference =
+      std::unique_ptr<ModelInference>(
+          new TrajectoryImitationLibtorchInference(config));
+  ACHECK(trajectory_imitation_libtorch_inference->LoadModel())
+      << "Failed to load model in libtorch inference";
+  ACHECK(trajectory_imitation_libtorch_inference->DoInference(&test_data_frame))
       << "Failed to inference trajectory_imitation_model";
 }
 

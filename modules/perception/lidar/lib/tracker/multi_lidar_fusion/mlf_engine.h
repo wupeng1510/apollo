@@ -35,6 +35,9 @@ namespace lidar {
 
 class MlfEngine : public BaseMultiTargetTracker {
  public:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+ public:
   MlfEngine() = default;
   ~MlfEngine() = default;
 
@@ -84,11 +87,11 @@ class MlfEngine : public BaseMultiTargetTracker {
   void RemoveStaleTrackData(const std::string& name, double timestamp,
                             std::vector<MlfTrackDataPtr>* tracks);
 
-  void AttachDebugInfo(
-      std::vector<std::shared_ptr<base::Object>>* foreground_objs);
+//  void AttachDebugInfo(
+//      std::vector<std::shared_ptr<base::Object>>* foreground_objs);
 
-  void AttachSemanticPredictedTrajectory(
-      const std::vector<MlfTrackDataPtr>& tracks);
+//  void AttachSemanticPredictedTrajectory(
+//      const std::vector<MlfTrackDataPtr>& tracks);
 
  protected:
   // foreground and background track data

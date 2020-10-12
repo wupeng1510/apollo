@@ -53,7 +53,8 @@ ScenarioManager::ScenarioManager(
     const std::shared_ptr<DependencyInjector>& injector)
     : injector_(injector) {}
 
-bool ScenarioManager::Init() {
+bool ScenarioManager::Init(const PlanningConfig& planning_config) {
+  planning_config_.CopyFrom(planning_config);
   RegisterScenarios();
   default_scenario_type_ = ScenarioConfig::LANE_FOLLOW;
   current_scenario_ = CreateScenario(default_scenario_type_);
@@ -132,8 +133,15 @@ std::unique_ptr<Scenario> ScenarioManager::CreateScenario(
 
 void ScenarioManager::RegisterScenarios() {
   // lane_follow
-  ACHECK(Scenario::LoadConfig(FLAGS_scenario_lane_follow_config_file,
-                              &config_map_[ScenarioConfig::LANE_FOLLOW]));
+  if (planning_config_.learning_mode() == PlanningConfig::HYBRID ||
+      planning_config_.learning_mode() == PlanningConfig::HYBRID_TEST) {
+    // HYBRID or HYBRID_TEST
+    ACHECK(Scenario::LoadConfig(FLAGS_scenario_lane_follow_hybrid_config_file,
+                                &config_map_[ScenarioConfig::LANE_FOLLOW]));
+  } else {
+    ACHECK(Scenario::LoadConfig(FLAGS_scenario_lane_follow_config_file,
+                                &config_map_[ScenarioConfig::LANE_FOLLOW]));
+  }
 
   // bare_intersection
   ACHECK(Scenario::LoadConfig(
@@ -727,7 +735,7 @@ ScenarioConfig::ScenarioType ScenarioManager::SelectParkAndGoScenario(
   bool park_and_go = false;
   const auto& scenario_config =
       config_map_[ScenarioConfig::PARK_AND_GO].park_and_go_config();
-  const auto vehicle_state_provider = common::VehicleStateProvider::Instance();
+  const auto vehicle_state_provider = injector_->vehicle_state();
   common::VehicleState vehicle_state = vehicle_state_provider->vehicle_state();
   auto adc_point = common::util::PointFactory::ToPointENU(vehicle_state);
   // TODO(SHU) might consider gear == GEAR_PARKING
@@ -798,9 +806,18 @@ void ScenarioManager::Update(const common::TrajectoryPoint& ego_point,
 
 void ScenarioManager::ScenarioDispatch(const Frame& frame) {
   ACHECK(!frame.reference_line_info().empty());
-
   ScenarioConfig::ScenarioType scenario_type;
-  if (FLAGS_planning_offline_mode == 1) {
+
+  int history_points_len = 0;
+  if (injector_->learning_based_data() &&
+      injector_->learning_based_data()->GetLatestLearningDataFrame()) {
+    history_points_len = injector_->learning_based_data()
+                                  ->GetLatestLearningDataFrame()
+                                  ->adc_trajectory_point_size();
+  }
+  if ((planning_config_.learning_mode() == PlanningConfig::E2E ||
+       planning_config_.learning_mode() == PlanningConfig::E2E_TEST) &&
+      history_points_len >= FLAGS_min_past_history_points_len) {
     scenario_type = ScenarioDispatchLearning();
   } else {
     scenario_type = ScenarioDispatchNonLearning(frame);
@@ -972,7 +989,7 @@ void ScenarioManager::UpdatePlanningContextEmergencyStopcenario(
   auto* emergency_stop = injector_->planning_context()
                              ->mutable_planning_status()
                              ->mutable_emergency_stop();
-  if (!scenario_type == ScenarioConfig::EMERGENCY_STOP) {
+  if (scenario_type != ScenarioConfig::EMERGENCY_STOP) {
     emergency_stop->Clear();
   }
 }

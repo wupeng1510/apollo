@@ -85,7 +85,7 @@ void TaskFactory::Init(const PlanningConfig& config,
       TaskConfig::OPEN_SPACE_FALLBACK_DECIDER,
       [](const TaskConfig& config,
          const std::shared_ptr<DependencyInjector>& injector) -> Task* {
-        return new OpenSpaceFallbackDecider(config);
+        return new OpenSpaceFallbackDecider(config, injector);
       });
   task_factory_.Register(
       TaskConfig::OPEN_SPACE_PRE_STOP_DECIDER,
@@ -127,7 +127,7 @@ void TaskFactory::Init(const PlanningConfig& config,
       TaskConfig::PATH_REFERENCE_DECIDER,
       [](const TaskConfig& config,
          const std::shared_ptr<DependencyInjector>& injector) -> Task* {
-        return new PathReferenceDecider(config);
+        return new PathReferenceDecider(config, injector);
       });
   task_factory_.Register(
       TaskConfig::PATH_REUSE_DECIDER,
@@ -145,7 +145,7 @@ void TaskFactory::Init(const PlanningConfig& config,
       TaskConfig::RULE_BASED_STOP_DECIDER,
       [](const TaskConfig& config,
          const std::shared_ptr<DependencyInjector>& injector) -> Task* {
-        return new RuleBasedStopDecider(config);
+        return new RuleBasedStopDecider(config, injector);
       });
   task_factory_.Register(
       TaskConfig::SPEED_BOUNDS_PRIORI_DECIDER,
@@ -215,13 +215,13 @@ void TaskFactory::Init(const PlanningConfig& config,
       TaskConfig::LEARNING_MODEL_INFERENCE_TASK,
       [](const TaskConfig& config,
          const std::shared_ptr<DependencyInjector>& injector) -> Task* {
-        return new LearningModelInferenceTask(config);
+        return new LearningModelInferenceTask(config, injector);
       });
   task_factory_.Register(
       TaskConfig::LEARNING_MODEL_INFERENCE_TRAJECTORY_TASK,
       [](const TaskConfig& config,
          const std::shared_ptr<DependencyInjector>& injector) -> Task* {
-        return new LearningModelInferenceTrajectoryTask(config);
+        return new LearningModelInferenceTrajectoryTask(config, injector);
       });
 
   for (const auto& default_task_config : config.default_task_config()) {
