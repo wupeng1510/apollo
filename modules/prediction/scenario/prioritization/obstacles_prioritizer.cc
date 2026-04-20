@@ -395,6 +395,9 @@ void ObstaclesPrioritizer::AssignCautionLevelPedestrianByEgoReferenceLine(
       continue;
     }
     Feature* latest_feature_ptr = obstacle_ptr->mutable_latest_feature();
+    if (latest_feature_ptr->priority().priority() == ObstaclePriority::IGNORE) {
+      continue;
+    }
     if (latest_feature_ptr->type() != PerceptionObstacle::PEDESTRIAN) {
       continue;
     }
@@ -446,6 +449,9 @@ void ObstaclesPrioritizer::AssignCautionLevelPedestrianInFront(
       obstacles_container->curr_frame_movable_obstacle_ids();
   for (const int obstacle_id : obstacle_ids) {
     Obstacle* obstacle_ptr = obstacles_container->GetObstacle(obstacle_id);
+    if (!obstacle_ptr) {
+      continue;
+    }
     if (!obstacle_ptr->IsPedestrian() || obstacle_ptr->history_size() == 0) {
       continue;
     }
@@ -551,7 +557,7 @@ void ObstaclesPrioritizer::SetCautionBackward(
     return;
   }
   std::unordered_map<std::string, std::vector<LaneObstacle>> lane_obstacles =
-      ObstacleClusters::GetLaneObstacles();
+      obstacles_container->GetClustersPtr()->GetLaneObstacles();
   std::queue<std::pair<ConstLaneInfoPtr, double>> lane_info_queue;
   lane_info_queue.emplace(start_lane_info_ptr,
                           start_lane_info_ptr->total_length());

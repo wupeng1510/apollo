@@ -54,6 +54,9 @@ DEFINE_int32(prediction_offline_mode, 0,
              "3: dump predicted trajectory to predict_result.*.bin"
              "4: dump frame environment info to frame_env.*.bin"
              "5: dump data for tuning to datatuning.*.bin");
+DEFINE_bool(enable_multi_agent_pedestrian_evaluator, true, "If enable multi agent pedestrian evaluator.");
+DEFINE_bool(enable_multi_agent_vehicle_evaluator, true, "If enable multi agent vehicle evaluator.");
+DEFINE_bool(prediction_eval_mode, false, "Set prediction to eval mode");
 DEFINE_bool(enable_multi_thread, true, "If enable multi-thread.");
 DEFINE_int32(max_thread_num, 8, "Maximal number of threads.");
 DEFINE_int32(max_caution_thread_num, 2,
@@ -84,3 +87,18 @@ DEFINE_string(evaluator_submodule_name, "evaluator_submodule",
 DEFINE_string(perception_obstacles_topic_name,
               "/apollo/prediction/perception_obstacles",
               "Internal topic of perception obstacles");
+
+// VectorNet
+DEFINE_string(prediction_target_file, "/apollo/data/train/test.pb.txt",
+              "VectorNet target pb file name");
+DEFINE_string(world_coordinate_file, "/apollo/data/world_coord.bin",
+              "VectorNet world coordinate file name");
+DEFINE_string(prediction_target_dir, "/apollo/data/train/",
+              "VectorNet target dir");
+DEFINE_double(obstacle_x, 0.0, "obstacle position x");
+DEFINE_double(obstacle_y, 0.0, "obstacle position y");
+DEFINE_double(obstacle_phi, 0.0, "obstacle heading phi");
+DEFINE_double(road_distance, 100.0,
+              "road distance within which the points are got");
+DEFINE_double(point_distance, 5.0,
+              "sampling distance of two points");

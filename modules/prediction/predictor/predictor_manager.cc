@@ -247,13 +247,23 @@ void PredictorManager::PredictObstacle(
   } else {
     switch (obstacle->type()) {
       case PerceptionObstacle::VEHICLE: {
-        RunVehiclePredictor(adc_trajectory_container, obstacle,
+        if (FLAGS_enable_multi_agent_vehicle_evaluator) {
+          RunEmptyPredictor(adc_trajectory_container, obstacle,
                             obstacles_container);
+        } else {
+          RunVehiclePredictor(adc_trajectory_container, obstacle,
+                              obstacles_container);
+        }
         break;
       }
       case PerceptionObstacle::PEDESTRIAN: {
-        RunPedestrianPredictor(adc_trajectory_container, obstacle,
-                               obstacles_container);
+        if (FLAGS_enable_multi_agent_pedestrian_evaluator) {
+          RunEmptyPredictor(adc_trajectory_container, obstacle,
+                            obstacles_container);
+        } else {
+          RunPedestrianPredictor(adc_trajectory_container, obstacle,
+                                 obstacles_container);
+        }
         break;
       }
       case PerceptionObstacle::BICYCLE: {
@@ -276,6 +286,8 @@ void PredictorManager::PredictObstacle(
   prediction_obstacle->set_timestamp(obstacle->timestamp());
   prediction_obstacle->mutable_priority()->CopyFrom(
       obstacle->latest_feature().priority());
+  prediction_obstacle->mutable_interactive_tag()->CopyFrom(
+      obstacle->latest_feature().interactive_tag());
   prediction_obstacle->set_is_static(obstacle->IsStill());
   if (FLAGS_prediction_offline_mode ==
       PredictionConstants::kDumpPredictionResult) {
@@ -337,6 +349,9 @@ const PredictionObstacles& PredictorManager::prediction_obstacles() {
 }
 
 void PredictorManager::InitVehiclePredictors(const ObstacleConf& conf) {
+  if (!conf.has_obstacle_status() && conf.has_interactive_tag()) {
+    vehicle_interactive_predictor_ = conf.predictor_type();
+  }
   switch (conf.obstacle_status()) {
     case ObstacleConf::ON_LANE: {
       if (conf.priority_type() == ObstaclePriority::CAUTION) {
@@ -394,6 +409,16 @@ void PredictorManager::RunVehiclePredictor(
     const ADCTrajectoryContainer* adc_trajectory_container, Obstacle* obstacle,
     ObstaclesContainer* obstacles_container) {
   Predictor* predictor = nullptr;
+  if (obstacle->IsInteractiveObstacle()) {
+    predictor = GetPredictor(vehicle_interactive_predictor_);
+    if (predictor->Predict(adc_trajectory_container, obstacle,
+                           obstacles_container)) {
+      return;
+    } else {
+      AERROR << "Obstacle: " << obstacle->id()
+             << " interactive predictor failed!";
+    }
+  }
   if (obstacle->IsCaution()) {
     if (obstacle->IsNearJunction()) {
       predictor = GetPredictor(vehicle_in_junction_caution_predictor_);

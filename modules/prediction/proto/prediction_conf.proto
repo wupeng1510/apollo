@@ -2,8 +2,8 @@ syntax = "proto2";
 
 package apollo.prediction;
 
-import "modules/perception/proto/perception_obstacle.proto";
-import "modules/prediction/proto/feature.proto";
+import "modules/common_msgs/perception_msgs/perception_obstacle.proto";
+import "modules/common_msgs/prediction_msgs/feature.proto";
 
 message ObstacleConf {
   enum ObstacleStatus {
@@ -26,6 +26,9 @@ message ObstacleConf {
     JUNCTION_MAP_EVALUATOR = 8;
     LANE_AGGREGATING_EVALUATOR = 9;
     SEMANTIC_LSTM_EVALUATOR = 10;
+    JOINTLY_PREDICTION_PLANNING_EVALUATOR = 11;
+    VECTORNET_EVALUATOR = 12;
+    MULTI_AGENT_EVALUATOR = 13;
   }
 
   enum PredictorType {
@@ -43,6 +46,7 @@ message ObstacleConf {
   optional apollo.perception.PerceptionObstacle.Type obstacle_type = 1;
   optional ObstacleStatus obstacle_status = 2 [default = STATIONARY];
   optional ObstaclePriority.Priority priority_type = 5;
+  optional ObstacleInteractiveTag.InteractiveTag interactive_tag = 6;
   optional EvaluatorType evaluator_type = 3;
   optional PredictorType predictor_type = 4;
 }
@@ -62,4 +66,26 @@ message TopicConf {
 message PredictionConf {
   optional TopicConf topic_conf = 1;
   repeated ObstacleConf obstacle_conf = 2;
+  optional EvaluatorModelConf evaluator_model_conf = 3;
+}
+
+message ModelConf {
+  optional string model_path = 1;
+}
+
+message EvaluatorModelConf {
+  repeated Model model = 1;
+}
+
+message Model {
+  enum Backend {
+    GPU = 1;
+    CPU = 2;
+  }
+
+  optional ObstacleConf.EvaluatorType evaluator_type = 1;
+  optional apollo.perception.PerceptionObstacle.Type obstacle_type = 2;
+  optional Backend backend = 3;
+  optional string type = 4;
+  optional int32 priority = 5;
 }

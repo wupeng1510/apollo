@@ -18,9 +18,11 @@
 #define CYBER_MESSAGE_MESSAGE_TRAITS_H_
 
 #include <string>
+#include <typeinfo>
 
 #include "cyber/base/macros.h"
 #include "cyber/common/log.h"
+#include "cyber/message/arena_message_wrapper.h"
 #include "cyber/message/message_header.h"
 #include "cyber/message/protobuf_traits.h"
 #include "cyber/message/py_message_traits.h"
@@ -30,7 +32,7 @@ namespace apollo {
 namespace cyber {
 namespace message {
 
-DEFINE_TYPE_TRAIT(HasByteSize, ByteSize)
+DEFINE_TYPE_TRAIT(HasByteSize, ByteSizeLong)
 DEFINE_TYPE_TRAIT(HasType, TypeName)
 DEFINE_TYPE_TRAIT(HasSetType, SetTypeName)
 DEFINE_TYPE_TRAIT(HasGetDescriptorString, GetDescriptorString)
@@ -40,6 +42,9 @@ DEFINE_TYPE_TRAIT(HasSerializeToString, SerializeToString)
 DEFINE_TYPE_TRAIT(HasParseFromString, ParseFromString)
 DEFINE_TYPE_TRAIT(HasSerializeToArray, SerializeToArray)
 DEFINE_TYPE_TRAIT(HasParseFromArray, ParseFromArray)
+DEFINE_TYPE_TRAIT(HasSerializeToArenaMessageWrapper,
+                  SerializeToArenaMessageWrapper)
+DEFINE_TYPE_TRAIT(HasParseFromArenaMessageWrapper, ParseFromArenaMessageWrapper)
 
 template <typename T>
 class HasSerializer {
@@ -122,7 +127,7 @@ typename std::enable_if<!HasSetType<T>::value, void>::type SetTypeName(
 template <typename T>
 typename std::enable_if<HasByteSize<T>::value, int>::type ByteSize(
     const T& message) {
-  return message.ByteSize();
+  return static_cast<int>(message.ByteSizeLong());
 }
 
 template <typename T>
@@ -139,6 +144,26 @@ int FullByteSize(const T& message) {
     return content_size;
   }
   return content_size + static_cast<int>(sizeof(MessageHeader));
+}
+
+template <typename T>
+typename std::enable_if<HasParseFromArenaMessageWrapper<T>::value, bool>::type
+ParseFromArenaMessageWrapper(ArenaMessageWrapper* wrapper, T* message,
+                             T** message_ptr) {
+  return message->ParseFromArenaMessageWrapper(wrapper, message_ptr);
+}
+
+template <typename T,
+          typename std::enable_if<
+              !HasParseFromArenaMessageWrapper<T>::value &&
+                  !std::is_base_of<google::protobuf::Message, T>::value,
+              bool>::type = 0>
+bool ParseFromArenaMessageWrapper(ArenaMessageWrapper* wrapper, T* message,
+                                  T** message_ptr) {
+  (void)wrapper;
+  (void)message;
+  (void)message_ptr;
+  return false;
 }
 
 template <typename T>
@@ -185,6 +210,27 @@ typename std::enable_if<!HasParseFromArray<T>::value, bool>::type ParseFromHC(
 }
 
 template <typename T>
+typename std::enable_if<HasSerializeToArenaMessageWrapper<T>::value, bool>::type
+SerializeToArenaMessageWrapper(const T& message, ArenaMessageWrapper* wrapper,
+                               T** message_ptr) {
+  return message->SerializeToArenaMessageWrapper(wrapper, message_ptr);
+}
+
+template <typename T,
+          typename std::enable_if<
+              !HasSerializeToArenaMessageWrapper<T>::value &&
+                  !std::is_base_of<google::protobuf::Message, T>::value,
+              bool>::type = 0>
+bool SerializeToArenaMessageWrapper(const T& message,
+                                    ArenaMessageWrapper* wrapper,
+                                    T** message_ptr) {
+  (void)message;
+  (void)wrapper;
+  (void)message_ptr;
+  return false;
+}
+
+template <typename T>
 typename std::enable_if<HasSerializeToArray<T>::value, bool>::type
 SerializeToArray(const T& message, void* data, int size) {
   return message.SerializeToArray(data, size);
@@ -219,6 +265,9 @@ SerializeToHC(const T& message, void* data, int size) {
   MessageHeader header;
   header.set_msg_type(type_name.data(), type_name.size());
   header.set_content_size(msg_size);
+  if (sizeof(header) > static_cast<size_t>(size)) {
+    return false;
+  }
   char* ptr = reinterpret_cast<char*>(data);
   memcpy(ptr, static_cast<const void*>(&header), sizeof(header));
   ptr += sizeof(header);

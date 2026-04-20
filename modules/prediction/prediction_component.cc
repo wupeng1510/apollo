@@ -18,6 +18,7 @@
 
 #include "cyber/common/file.h"
 #include "cyber/record/record_reader.h"
+#include "cyber/time/clock.h"
 #include "modules/common/adapters/adapter_gflags.h"
 #include "modules/common/util/message_util.h"
 
@@ -31,13 +32,13 @@
 #include "modules/prediction/proto/offline_features.pb.h"
 #include "modules/prediction/proto/prediction_conf.pb.h"
 #include "modules/prediction/scenario/scenario_manager.h"
-#include "modules/prediction/util/data_extraction.h"
+#include "modules/common/util/data_extraction.h"
 
 namespace apollo {
 namespace prediction {
 
 using apollo::common::adapter::AdapterConfig;
-using apollo::common::time::Clock;
+using apollo::cyber::Clock;
 using apollo::perception::PerceptionObstacles;
 using apollo::planning::ADCTrajectory;
 
@@ -59,6 +60,9 @@ void PredictionComponent::OfflineProcessFeatureProtoFile(
   for (const Feature& feature : features.feature()) {
     obstacles_container_ptr->InsertFeatureProto(feature);
     Obstacle* obstacle_ptr = obstacles_container_ptr->GetObstacle(feature.id());
+    if (!obstacle_ptr) {
+      continue;
+    }
     evaluator_manager_->EvaluateObstacle(obstacle_ptr, obstacles_container_ptr);
   }
 }
@@ -121,7 +125,7 @@ bool PredictionComponent::Proc(
 bool PredictionComponent::ContainerSubmoduleProcess(
     const std::shared_ptr<PerceptionObstacles>& perception_obstacles) {
   constexpr static size_t kHistorySize = 10;
-  const auto frame_start_time = absl::Now();
+  const auto frame_start_time = Clock::Now();
   // Read localization info. and call OnLocalization to update
   // the PoseContainer.
   localization_reader_->Observe();
@@ -272,6 +276,35 @@ bool PredictionComponent::PredictionEndToEndProc(
   // Publish output
   common::util::FillHeader(node_->Name(), &prediction_obstacles);
   prediction_writer_->Write(prediction_obstacles);
+
+  if (FLAGS_prediction_eval_mode) {
+    for (auto const& prediction_obstacle :
+          prediction_obstacles.prediction_obstacle()) {
+      AINFO << "prediction_eval_log (info): "
+            << std::to_string(prediction_obstacle.timestamp()) << ", "
+            << prediction_obstacle.perception_obstacle().id() << ", "
+            << prediction_obstacle.priority().priority() << ", "
+            << prediction_obstacle.perception_obstacle().type() << ", "
+            << std::to_string(
+              prediction_obstacle.perception_obstacle().position().x())
+            << ", " << std::to_string(
+              prediction_obstacle.perception_obstacle().position().y());
+
+      if (prediction_obstacle.trajectory_size() != 0) {
+        for (auto const& trajectory : prediction_obstacle.trajectory()) {
+          for (auto const& trajectory_point : trajectory.trajectory_point()) {
+            AINFO << "prediction_eval_log (traj): "
+                  << std::to_string(prediction_obstacle.timestamp()) << ", "
+                  << prediction_obstacle.perception_obstacle().id() << ", "
+                  << std::to_string(trajectory_point.path_point().x()) << ", "
+                  << std::to_string(trajectory_point.path_point().y());
+          }
+          break;
+        }
+      }
+    }
+  }
+
   return true;
 }
 

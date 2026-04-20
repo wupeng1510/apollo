@@ -20,21 +20,22 @@
 #include <utility>
 #include <vector>
 
+#include "modules/common_msgs/basic_msgs/geometry.pb.h"
+#include "modules/common_msgs/map_msgs/map_area.pb.h"
+#include "modules/common_msgs/map_msgs/map_barrier_gate.pb.h"
+#include "modules/common_msgs/map_msgs/map_clear_area.pb.h"
+#include "modules/common_msgs/map_msgs/map_crosswalk.pb.h"
+#include "modules/common_msgs/map_msgs/map_junction.pb.h"
+#include "modules/common_msgs/map_msgs/map_lane.pb.h"
+#include "modules/common_msgs/map_msgs/map_overlap.pb.h"
+#include "modules/common_msgs/map_msgs/map_parking_space.pb.h"
+#include "modules/common_msgs/map_msgs/map_road.pb.h"
+#include "modules/common_msgs/map_msgs/map_signal.pb.h"
+#include "modules/common_msgs/map_msgs/map_speed_bump.pb.h"
+#include "modules/common_msgs/map_msgs/map_stop_sign.pb.h"
+#include "modules/common_msgs/map_msgs/map_yield_sign.pb.h"
+
 #include "cyber/common/macros.h"
-
-#include "modules/common/proto/geometry.pb.h"
-#include "modules/map/proto/map_clear_area.pb.h"
-#include "modules/map/proto/map_crosswalk.pb.h"
-#include "modules/map/proto/map_junction.pb.h"
-#include "modules/map/proto/map_lane.pb.h"
-#include "modules/map/proto/map_overlap.pb.h"
-#include "modules/map/proto/map_parking_space.pb.h"
-#include "modules/map/proto/map_road.pb.h"
-#include "modules/map/proto/map_signal.pb.h"
-#include "modules/map/proto/map_speed_bump.pb.h"
-#include "modules/map/proto/map_stop_sign.pb.h"
-#include "modules/map/proto/map_yield_sign.pb.h"
-
 #include "modules/map/hdmap/hdmap_common.h"
 #include "modules/map/hdmap/hdmap_impl.h"
 
@@ -78,6 +79,19 @@ class HDMap {
   RoadInfoConstPtr GetRoadById(const Id& id) const;
   ParkingSpaceInfoConstPtr GetParkingSpaceById(const Id& id) const;
   PNCJunctionInfoConstPtr GetPNCJunctionById(const Id& id) const;
+  RSUInfoConstPtr GetRSUById(const Id& id) const;
+  AreaInfoConstPtr GetAreaById(const Id& id) const;
+  BarrierGateInfoConstPtr GetBarrierGateById(const Id& id) const;
+
+  /**
+   * @brief get all areas in certain range
+   * @param point the central point of the range
+   * @param distance the search radius
+   * @param areas store all areas in target range
+   * @return 0:success, otherwise failed
+   */
+  int GetAreas(const apollo::common::PointENU& point, double distance,
+               std::vector<AreaInfoConstPtr>* areas) const;
 
   /**
    * @brief get all lanes in certain range
@@ -106,6 +120,15 @@ class HDMap {
    */
   int GetSignals(const apollo::common::PointENU& point, double distance,
                  std::vector<SignalInfoConstPtr>* signals) const;
+  /**
+   * @brief get all barrier_gates in certain range
+   * @param point the central point of the range
+   * @param distance the search radius
+   * @param barrier_gates store all barrier_gates in target range
+   * @return 0:success, otherwise failed
+   */
+  int GetBarrierGates(const apollo::common::PointENU& point, double distance,
+                 std::vector<BarrierGateInfoConstPtr>* barrier_gates) const;
   /**
    * @brief get all crosswalks in certain range
    * @param point the central point of the range
@@ -180,6 +203,21 @@ class HDMap {
   int GetPNCJunctions(
       const apollo::common::PointENU& point, double distance,
       std::vector<PNCJunctionInfoConstPtr>* pnc_junctions) const;
+
+  /**
+   * @brief get nearest lane from target point with search radius,
+   * @param point the target point
+   * @param distance the search radius
+   * @param nearest_lane the nearest lane that match search conditions
+   * @param nearest_s the offset from lane start point along lane center line
+   * @param nearest_l the lateral offset from lane center line
+   * @return 0:success, otherwise, failed.
+   */
+  int GetNearestLaneWithDistance(const apollo::common::PointENU& point,
+                                 const double distance,
+                                 LaneInfoConstPtr* nearest_lane,
+                                 double* nearest_s, double* nearest_l) const;
+
   /**
    * @brief get nearest lane from target point,
    * @param point the target point
@@ -268,6 +306,17 @@ class HDMap {
       std::vector<SignalInfoConstPtr>* signals) const;
 
   /**
+   * @brief get forward nearest barrier_gates within certain range on the lane
+   * @param point the target position
+   * @param distance the forward search distance
+   * @param barrier_gates all barrier_gates match conditions
+   * @return 0:success, otherwise failed
+   */
+  int GetForwardNearestBarriersOnLane(
+      const apollo::common::PointENU& point, const double distance,
+      std::vector<BarrierGateInfoConstPtr>* barrier_gates) const;
+
+  /**
    * @brief get all other stop signs associated with a stop sign
    *        in the same junction
    * @param id id of stop sign
@@ -296,6 +345,22 @@ class HDMap {
    */
   int GetLocalMap(const apollo::common::PointENU& point,
                   const std::pair<double, double>& range, Map* local_map) const;
+
+  /**
+   * @brief get forward nearest rsus within certain range
+   * @param point the target position
+   * @param distance the forward search distance
+   * @param central_heading the base heading
+   * @param max_heading_difference the heading range
+   * @param rsus all rsus that match search conditions
+   * @return 0:success, otherwise failed
+   */
+  int GetForwardNearestRSUs(const apollo::common::PointENU& point,
+                            double distance, double central_heading,
+                            double max_heading_difference,
+                            std::vector<RSUInfoConstPtr>* rsus) const;
+
+  bool GetMapHeader(Header* map_header) const;
 
  private:
   HDMapImpl impl_;

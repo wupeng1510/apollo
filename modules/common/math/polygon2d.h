@@ -26,7 +26,6 @@
 
 #include "modules/common/math/box2d.h"
 #include "modules/common/math/line_segment2d.h"
-#include "modules/common/math/vec2d.h"
 
 /**
  * @namespace apollo::common::math
@@ -57,7 +56,7 @@ class Polygon2d {
    * @brief Constructor which takes a vector of points as its vertices.
    * @param points The points to construct the polygon.
    */
-  explicit Polygon2d(std::vector<Vec2d> points);
+  explicit Polygon2d(std::vector<Vec2d> points, bool check_area = true);
 
   /**
    * @brief Get the vertices of the polygon.
@@ -190,7 +189,8 @@ class Polygon2d {
    * @return If successfully compute the convex hull.
    */
   static bool ComputeConvexHull(const std::vector<Vec2d> &points,
-                                Polygon2d *const polygon);
+                                Polygon2d *const polygon,
+                                bool check_area = true);
 
   /**
    * @brief Check if a line segment has overlap with this polygon.
@@ -305,6 +305,10 @@ class Polygon2d {
    */
   Polygon2d ExpandByDistance(const double distance) const;
 
+  Polygon2d PolygonExpandByDistance(const double distance) const;
+
+  void CalculateVertices(const Vec2d &shift_vec);
+
   /**
    * @brief Get a string containing essential information about the polygon
    *        for debugging purpose.
@@ -316,9 +320,10 @@ class Polygon2d {
   double max_x() const { return max_x_; }
   double min_y() const { return min_y_; }
   double max_y() const { return max_y_; }
+  LineSegment2d MinLineSegment() const;
 
  protected:
-  void BuildFromPoints();
+  void BuildFromPoints(bool check_area = true);
   int Next(int at) const;
   int Prev(int at) const;
 

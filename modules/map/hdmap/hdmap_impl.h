@@ -21,25 +21,28 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "modules/common_msgs/map_msgs/map.pb.h"
+#include "modules/common_msgs/map_msgs/map_area.pb.h"
+#include "modules/common_msgs/map_msgs/map_barrier_gate.pb.h"
+#include "modules/common_msgs/map_msgs/map_clear_area.pb.h"
+#include "modules/common_msgs/map_msgs/map_crosswalk.pb.h"
+#include "modules/common_msgs/map_msgs/map_geometry.pb.h"
+#include "modules/common_msgs/map_msgs/map_junction.pb.h"
+#include "modules/common_msgs/map_msgs/map_lane.pb.h"
+#include "modules/common_msgs/map_msgs/map_overlap.pb.h"
+#include "modules/common_msgs/map_msgs/map_parking_space.pb.h"
+#include "modules/common_msgs/map_msgs/map_pnc_junction.pb.h"
+#include "modules/common_msgs/map_msgs/map_signal.pb.h"
+#include "modules/common_msgs/map_msgs/map_speed_bump.pb.h"
+#include "modules/common_msgs/map_msgs/map_stop_sign.pb.h"
+#include "modules/common_msgs/map_msgs/map_yield_sign.pb.h"
+
 #include "modules/common/math/aabox2d.h"
 #include "modules/common/math/aaboxkdtree2d.h"
 #include "modules/common/math/line_segment2d.h"
 #include "modules/common/math/polygon2d.h"
 #include "modules/common/math/vec2d.h"
 #include "modules/map/hdmap/hdmap_common.h"
-#include "modules/map/proto/map.pb.h"
-#include "modules/map/proto/map_clear_area.pb.h"
-#include "modules/map/proto/map_crosswalk.pb.h"
-#include "modules/map/proto/map_geometry.pb.h"
-#include "modules/map/proto/map_junction.pb.h"
-#include "modules/map/proto/map_lane.pb.h"
-#include "modules/map/proto/map_overlap.pb.h"
-#include "modules/map/proto/map_parking_space.pb.h"
-#include "modules/map/proto/map_pnc_junction.pb.h"
-#include "modules/map/proto/map_signal.pb.h"
-#include "modules/map/proto/map_speed_bump.pb.h"
-#include "modules/map/proto/map_stop_sign.pb.h"
-#include "modules/map/proto/map_yield_sign.pb.h"
 
 /**
  * @namespace apollo::hdmap
@@ -58,8 +61,11 @@ class HDMapImpl {
   using LaneTable = std::unordered_map<std::string, std::shared_ptr<LaneInfo>>;
   using JunctionTable =
       std::unordered_map<std::string, std::shared_ptr<JunctionInfo>>;
+  using AreaTable = std::unordered_map<std::string, std::shared_ptr<AreaInfo>>;
   using SignalTable =
       std::unordered_map<std::string, std::shared_ptr<SignalInfo>>;
+  using BarrierGateTable =
+      std::unordered_map<std::string, std::shared_ptr<BarrierGateInfo>>;
   using CrosswalkTable =
       std::unordered_map<std::string, std::shared_ptr<CrosswalkInfo>>;
   using StopSignTable =
@@ -77,6 +83,7 @@ class HDMapImpl {
       std::unordered_map<std::string, std::shared_ptr<ParkingSpaceInfo>>;
   using PNCJunctionTable =
       std::unordered_map<std::string, std::shared_ptr<PNCJunctionInfo>>;
+  using RSUTable = std::unordered_map<std::string, std::shared_ptr<RSUInfo>>;
 
  public:
   /**
@@ -105,7 +112,25 @@ class HDMapImpl {
   RoadInfoConstPtr GetRoadById(const Id& id) const;
   ParkingSpaceInfoConstPtr GetParkingSpaceById(const Id& id) const;
   PNCJunctionInfoConstPtr GetPNCJunctionById(const Id& id) const;
+  RSUInfoConstPtr GetRSUById(const Id& id) const;
+  AreaInfoConstPtr GetAreaById(const Id& id) const;
+  BarrierGateInfoConstPtr GetBarrierGateById(const Id& id) const;
 
+  /**
+   * @brief convert id data type
+   * @param string_id string type of id
+   * @return proto type of id
+   */
+  Id CreateHDMapId(const std::string& string_id) const;
+  /**
+   * @brief get all areas in certain range
+   * @param point the central point of the range
+   * @param distance the search radius
+   * @param areas store all areas in target range
+   * @return 0:success, otherwise failed
+   */
+  int GetAreas(const apollo::common::PointENU& point, double distance,
+               std::vector<AreaInfoConstPtr>* areas) const;
   /**
    * @brief get all lanes in certain range
    * @param point the central point of the range
@@ -142,6 +167,15 @@ class HDMapImpl {
    */
   int GetSignals(const apollo::common::PointENU& point, double distance,
                  std::vector<SignalInfoConstPtr>* signals) const;
+  /**
+   * @brief get all barrier_gates in certain range
+   * @param point the central point of the range
+   * @param distance the search radius
+   * @param barrier_gates store all barrier_gates in target range
+   * @return 0:success, otherwise failed
+   */
+  int GetBarrierGates(const apollo::common::PointENU& point, double distance,
+                 std::vector<BarrierGateInfoConstPtr>* barrier_gates) const;
   /**
    * @brief get all stop signs in certain range
    * @param point the central point of the range
@@ -209,6 +243,20 @@ class HDMapImpl {
   int GetPNCJunctions(
       const apollo::common::PointENU& point, double distance,
       std::vector<PNCJunctionInfoConstPtr>* pnc_junctions) const;
+
+  /**
+   * @brief get nearest lane from target point with search radius,
+   * @param point the target point
+   * @param distance the search radius
+   * @param nearest_lane the nearest lane that match search conditions
+   * @param nearest_s the offset from lane start point along lane center line
+   * @param nearest_l the lateral offset from lane center line
+   * @return 0:success, otherwise, failed.
+   */
+  int GetNearestLaneWithDistance(const apollo::common::PointENU& point,
+                                 const double distance,
+                                 LaneInfoConstPtr* nearest_lane,
+                                 double* nearest_s, double* nearest_l) const;
 
   /**
    * @brief get nearest lane from target point,
@@ -298,6 +346,17 @@ class HDMapImpl {
       std::vector<SignalInfoConstPtr>* signals) const;
 
   /**
+   * @brief get forward nearest barrier_gates within certain range on the lane
+   * @param point the target position
+   * @param distance the forward search distance
+   * @param barrier_gates all barrier_gates match conditions
+   * @return 0:success, otherwise failed
+   */
+  int GetForwardNearestBarriersOnLane(
+      const apollo::common::PointENU& point, const double distance,
+      std::vector<BarrierGateInfoConstPtr>* barrier_gates) const;
+
+  /**
    * @brief get all other stop signs associated with a stop sign
    *        in the same junction
    * @param id id of stop sign
@@ -327,15 +386,35 @@ class HDMapImpl {
   int GetLocalMap(const apollo::common::PointENU& point,
                   const std::pair<double, double>& range, Map* local_map) const;
 
+  /**
+   * @brief get forward nearest rsus within certain range
+   * @param point the target position
+   * @param distance the forward search distance
+   * @param central_heading the base heading
+   * @param max_heading_difference the heading range
+   * @param rsus all rsus that match search conditions
+   * @return 0:success, otherwise failed
+   */
+  int GetForwardNearestRSUs(const apollo::common::PointENU& point,
+                            double distance, double central_heading,
+                            double max_heading_difference,
+                            std::vector<RSUInfoConstPtr>* rsus) const;
+
+  bool GetMapHeader(Header* map_header) const;
+
  private:
   int GetLanes(const apollo::common::math::Vec2d& point, double distance,
                std::vector<LaneInfoConstPtr>* lanes) const;
   int GetJunctions(const apollo::common::math::Vec2d& point, double distance,
                    std::vector<JunctionInfoConstPtr>* junctions) const;
+  int GetAreas(const apollo::common::math::Vec2d&, double distance,
+               std::vector<AreaInfoConstPtr>* areas) const;
   int GetCrosswalks(const apollo::common::math::Vec2d& point, double distance,
                     std::vector<CrosswalkInfoConstPtr>* crosswalks) const;
   int GetSignals(const apollo::common::math::Vec2d& point, double distance,
                  std::vector<SignalInfoConstPtr>* signals) const;
+  int GetBarrierGates(const apollo::common::math::Vec2d& point, double distance,
+                 std::vector<BarrierGateInfoConstPtr>* barrier_gates) const;
   int GetStopSigns(const apollo::common::math::Vec2d& point, double distance,
                    std::vector<StopSignInfoConstPtr>* stop_signs) const;
   int GetYieldSigns(const apollo::common::math::Vec2d& point, double distance,
@@ -365,6 +444,10 @@ class HDMapImpl {
                           std::vector<LaneInfoConstPtr>* lanes) const;
   int GetRoads(const apollo::common::math::Vec2d& point, double distance,
                std::vector<RoadInfoConstPtr>* roads) const;
+  int GetNearestLaneWithDistance(const apollo::common::math::Vec2d& point,
+                                 const double distance,
+                                 LaneInfoConstPtr* nearest_lane,
+                                 double* nearest_s, double* nearest_l) const;
 
   template <class Table, class BoxTable, class KDTree>
   static void BuildSegmentKDTree(
@@ -386,6 +469,8 @@ class HDMapImpl {
   void BuildSpeedBumpSegmentKDTree();
   void BuildParkingSpacePolygonKDTree();
   void BuildPNCJunctionPolygonKDTree();
+  void BuildAreaPolygonKDTree();
+  void BuildBarrierGateSegmentKDTree();
 
   template <class KDTree>
   static int SearchObjects(const apollo::common::math::Vec2d& center,
@@ -398,8 +483,10 @@ class HDMapImpl {
   Map map_;
   LaneTable lane_table_;
   JunctionTable junction_table_;
+  AreaTable area_table_;
   CrosswalkTable crosswalk_table_;
   SignalTable signal_table_;
+  BarrierGateTable barrier_gate_table_;
   StopSignTable stop_sign_table_;
   YieldSignTable yield_sign_table_;
   ClearAreaTable clear_area_table_;
@@ -408,6 +495,7 @@ class HDMapImpl {
   RoadTable road_table_;
   ParkingSpaceTable parking_space_table_;
   PNCJunctionTable pnc_junction_table_;
+  RSUTable rsu_table_;
 
   std::vector<LaneSegmentBox> lane_segment_boxes_;
   std::unique_ptr<LaneSegmentKDTree> lane_segment_kdtree_;
@@ -415,11 +503,17 @@ class HDMapImpl {
   std::vector<JunctionPolygonBox> junction_polygon_boxes_;
   std::unique_ptr<JunctionPolygonKDTree> junction_polygon_kdtree_;
 
+  std::vector<AreaPolygonBox> area_polygon_boxes_;
+  std::unique_ptr<AreaPolygonKDTree> area_polygon_kdtree_;
+
   std::vector<CrosswalkPolygonBox> crosswalk_polygon_boxes_;
   std::unique_ptr<CrosswalkPolygonKDTree> crosswalk_polygon_kdtree_;
 
   std::vector<SignalSegmentBox> signal_segment_boxes_;
   std::unique_ptr<SignalSegmentKDTree> signal_segment_kdtree_;
+
+  std::vector<BarrierGateSegmentBox> barrier_gate_segment_boxes_;
+  std::unique_ptr<BarrierGateSegmentKDTree> barrier_gate_segment_kdtree_;
 
   std::vector<StopSignSegmentBox> stop_sign_segment_boxes_;
   std::unique_ptr<StopSignSegmentKDTree> stop_sign_segment_kdtree_;

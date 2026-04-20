@@ -14,17 +14,21 @@
  * limitations under the License.
  *****************************************************************************/
 
+#include "modules/drivers/gnss/stream/raw_stream.h"
+
 #include <cmath>
 #include <ctime>
 #include <memory>
 #include <thread>
 #include <vector>
 
+#include "absl/strings/str_cat.h"
+
+#include "modules/drivers/gnss/proto/config.pb.h"
+
 #include "cyber/cyber.h"
 #include "modules/common/adapters/adapter_gflags.h"
 #include "modules/common/util/message_util.h"
-#include "modules/drivers/gnss/proto/config.pb.h"
-#include "modules/drivers/gnss/stream/raw_stream.h"
 #include "modules/drivers/gnss/stream/stream.h"
 
 namespace apollo {
@@ -130,6 +134,24 @@ Stream *create_stream(const config::Stream &sd) {
           sd.ntrip().address(), static_cast<uint16_t>(sd.ntrip().port()),
           sd.ntrip().mount_point(), sd.ntrip().user(), sd.ntrip().password(),
           sd.ntrip().timeout_s());
+    case config::Stream::kCanCardParameter:
+      if (!sd.can_card_parameter().has_brand()) {
+        AERROR << "can_card_parameter def has no brand field.";
+        return nullptr;
+      }
+      if (!sd.can_card_parameter().has_type()) {
+        AERROR << "can_card_parameter def has no type field.";
+        return nullptr;
+      }
+      if (!sd.can_card_parameter().has_channel_id()) {
+        AERROR << "can_card_parameter def has no channel_id field.";
+        return nullptr;
+      }
+      if (!sd.can_card_parameter().has_channel_id()) {
+        AERROR << "can_card_parameter def has no channel_id field.";
+        return nullptr;
+      }
+      return Stream::create_can(sd.can_card_parameter());
     default:
       return nullptr;
   }
@@ -316,11 +338,10 @@ void RawStream::OnWheelVelocityTimer() {
   }
   auto latency_sec =
       cyber::Time::Now().ToSecond() - chassis_ptr_->header().timestamp_sec();
-  auto latency_ms = std::to_string(std::lround(latency_sec * 1000));
-  auto speed_cmps =
-      std::to_string(std::lround(chassis_ptr_->speed_mps() * 100));
-  auto cmd_wheelvelocity =
-      "WHEELVELOCITY " + latency_ms + " 100 0 0 0 0 0 " + speed_cmps + "\r\n";
+  auto latency_ms = std::lround(latency_sec * 1000);
+  auto speed_cmps = std::lround(chassis_ptr_->speed_mps() * 100);
+  auto cmd_wheelvelocity = absl::StrCat("WHEELVELOCITY ", latency_ms,
+                                        " 100 0 0 0 0 0 ", speed_cmps, "\r\n");
   AINFO << "Write command: " << cmd_wheelvelocity;
   command_stream_->write(cmd_wheelvelocity);
 }
@@ -482,14 +503,29 @@ void RawStream::DataSpin() {
     if (length > 0) {
       std::shared_ptr<RawData> msg_pub = std::make_shared<RawData>();
       if (!msg_pub) {
-        AERROR << "New data sting msg failed.";
+        AERROR << "New data raw msg failed.";
         continue;
       }
       msg_pub->set_data(reinterpret_cast<const char *>(buffer_), length);
       raw_writer_->Write(msg_pub);
-      data_parser_ptr_->ParseRawData(msg_pub->data());
+      data_parser_ptr_->ParseRawData(msg_pub->data(), 0);
       if (push_location_) {
         PushGpgga(length);
+      }
+    }
+    // other data stream
+    if (out_rtk_stream_ && config_.rtk_to().is_data_stream() &&
+        (out_rtk_stream_->get_status() == Stream::Status::CONNECTED)) {
+      size_t length = out_rtk_stream_->read(buffer_, BUFFER_SIZE);
+      if (length > 0) {
+        std::shared_ptr<RawData> msg_pub = std::make_shared<RawData>();
+        if (!msg_pub) {
+          AERROR << "New data raw msg failed.";
+          continue;
+        }
+        msg_pub->set_data(reinterpret_cast<const char *>(buffer_), length);
+        raw_writer_->Write(msg_pub);
+        data_parser_ptr_->ParseRawData(msg_pub->data(), 1);
       }
     }
     StreamStatusCheck();

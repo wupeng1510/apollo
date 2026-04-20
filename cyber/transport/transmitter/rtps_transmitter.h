@@ -22,6 +22,8 @@
 
 #include "cyber/common/log.h"
 #include "cyber/message/message_traits.h"
+#include "cyber/statistics/statistics.h"
+#include "cyber/time/time.h"
 #include "cyber/transport/rtps/attributes_filler.h"
 #include "cyber/transport/rtps/participant.h"
 #include "cyber/transport/transmitter/transmitter.h"
@@ -46,7 +48,12 @@ class RtpsTransmitter : public Transmitter<M> {
   void Enable() override;
   void Disable() override;
 
+  void Enable(const RoleAttributes& opposite_attr) override;
+  void Disable(const RoleAttributes& opposite_attr) override;
+
   bool Transmit(const MessagePtr& msg, const MessageInfo& msg_info) override;
+
+  bool AcquireMessage(std::shared_ptr<M>& msg);
 
  private:
   bool Transmit(const M& msg, const MessageInfo& msg_info);
@@ -56,6 +63,11 @@ class RtpsTransmitter : public Transmitter<M> {
 };
 
 template <typename M>
+bool RtpsTransmitter<M>::AcquireMessage(std::shared_ptr<M>& msg) {
+  return false;
+}
+
+template <typename M>
 RtpsTransmitter<M>::RtpsTransmitter(const RoleAttributes& attr,
                                     const ParticipantPtr& participant)
     : Transmitter<M>(attr), participant_(participant), publisher_(nullptr) {}
@@ -63,6 +75,18 @@ RtpsTransmitter<M>::RtpsTransmitter(const RoleAttributes& attr,
 template <typename M>
 RtpsTransmitter<M>::~RtpsTransmitter() {
   Disable();
+}
+
+template <typename M>
+void RtpsTransmitter<M>::Enable(const RoleAttributes& opposite_attr) {
+  (void)opposite_attr;
+  this->Enable();
+}
+
+template <typename M>
+void RtpsTransmitter<M>::Disable(const RoleAttributes& opposite_attr) {
+  (void)opposite_attr;
+  this->Disable();
 }
 
 template <typename M>
@@ -105,6 +129,11 @@ bool RtpsTransmitter<M>::Transmit(const M& msg, const MessageInfo& msg_info) {
 
   UnderlayMessage m;
   RETURN_VAL_IF(!message::SerializeToString(msg, &m.data()), false);
+
+  uint64_t send_time = msg_info.send_time();
+
+  m.timestamp(0x0fffffff & send_time);
+  m.seq(msg_info.msg_seq_num());
 
   eprosima::fastrtps::rtps::WriteParams wparams;
 

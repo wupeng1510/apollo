@@ -35,7 +35,7 @@ using apollo::cyber::proto::Header;
 using apollo::cyber::proto::SectionType;
 using apollo::cyber::proto::SingleIndex;
 
-RecordFileWriter::RecordFileWriter() {}
+RecordFileWriter::RecordFileWriter() : is_writing_(false) {}
 
 RecordFileWriter::~RecordFileWriter() { Close(); }
 
@@ -66,7 +66,13 @@ bool RecordFileWriter::Open(const std::string& path) {
 void RecordFileWriter::Close() {
   if (is_writing_) {
     // wait for the flush operation that may exist now
-    while (!chunk_flush_->empty()) {
+    while (1) {
+      {
+        std::unique_lock<std::mutex> flush_lock(flush_mutex_);
+        if (chunk_flush_->empty()) {
+          break;
+        }
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -78,7 +84,13 @@ void RecordFileWriter::Close() {
     }
 
     // wait for the last flush operation
-    while (!chunk_flush_->empty()) {
+    while (1) {
+      {
+        std::unique_lock<std::mutex> flush_lock(flush_mutex_);
+        if (chunk_flush_->empty()) {
+          break;
+        }
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
@@ -210,7 +222,7 @@ bool RecordFileWriter::WriteMessage(const proto::SingleMessage& message) {
           header_.chunk_interval()) {
     need_flush = true;
   }
-  if (header_.chunk_raw_size() > 0 &&
+  if (!in_writing_ && header_.chunk_raw_size() > 0 &&
       chunk_active_->header_.raw_size() > header_.chunk_raw_size()) {
     need_flush = true;
   }
@@ -236,9 +248,11 @@ void RecordFileWriter::Flush() {
     if (chunk_flush_->empty()) {
       continue;
     }
+    in_writing_ = true;
     if (!WriteChunk(chunk_flush_->header_, *(chunk_flush_->body_.get()))) {
       AERROR << "Write chunk fail.";
     }
+    in_writing_ = false;
     chunk_flush_->clear();
   }
 }

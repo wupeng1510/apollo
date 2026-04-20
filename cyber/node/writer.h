@@ -21,9 +21,10 @@
 #include <string>
 #include <vector>
 
+#include "cyber/proto/topology_change.pb.h"
+
 #include "cyber/common/log.h"
 #include "cyber/node/writer_base.h"
-#include "cyber/proto/topology_change.pb.h"
 #include "cyber/service_discovery/topology_manager.h"
 #include "cyber/transport/transport.h"
 
@@ -98,6 +99,12 @@ class Writer : public WriterBase {
    * @param readers vector result of RoleAttributes
    */
   void GetReaders(std::vector<proto::RoleAttributes>* readers) override;
+
+  /**
+   * @brief Acquire message instance to send
+   *
+   */ 
+  std::shared_ptr<MessageT> AcquireMessage();
 
  private:
   void JoinTheTopology();
@@ -228,6 +235,23 @@ void Writer<MessageT>::GetReaders(std::vector<proto::RoleAttributes>* readers) {
   }
 
   channel_manager_->GetReadersOfChannel(role_attr_.channel_name(), readers);
+}
+
+template <typename MessageT>
+std::shared_ptr<MessageT> Writer<MessageT>::AcquireMessage() {
+  if (!WriterBase::IsInit()) {
+    AERROR << "Please Acquire message after init writer!";
+    auto m = std::make_shared<MessageT>();
+    return m;
+  }
+
+  std::shared_ptr<MessageT> m(nullptr);
+  if (transmitter_->AcquireMessage(m)) {
+    return m;
+  } else {
+    m = std::make_shared<MessageT>();
+    return m;
+  }
 }
 
 }  // namespace cyber
